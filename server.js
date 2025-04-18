@@ -146,7 +146,11 @@ app.post("/api/:service", async (req, res) => {
               // 2) Usa axios con responseType: 'stream'
               const cbResponse = await axios.post(
                 "https://www.chatbase.co/api/v1/chat",
-                { messages: req.body.messages, chatId, stream: true, temperature: 0 },
+                { 
+                    messages: req.body.messages, 
+                    chatbotId: chatId, 
+                    stream: true, 
+                    temperature: 0 },
                 {
                   headers: {
                     Authorization: `Bearer ${CHATBASE_API_KEY}`,
