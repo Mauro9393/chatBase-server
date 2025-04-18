@@ -180,7 +180,7 @@ app.post("/api/:service", async (req, res) => {
               });
           
             } catch (err) {
-              console.error("❌ Errore durante lo streaming Chatbase:", err.message);
+              console.error("❌ Errore durante lo streaming Chatbase:", err.response?.status, err.message);
               res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
               res.write("data: [DONE]\n\n");
               return res.end();
