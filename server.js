@@ -130,8 +130,64 @@ app.post("/api/:service", async (req, res) => {
                     res.status(500).json({ error: "Errore sconosciuto con ElevenLabs" });
                 }
             }
-        }
-        else {
+        }else if (service === "chatbaseSimulateur") {
+            const CHATBASE_API_KEY = process.env.CHATBASE_SECRET_KEY;
+            const chatbotId = process.env.CHATBASE_AGENT_ID; // Se preferisci metterlo come env, altrimenti hardcoda l’ID
+        
+            if (!CHATBASE_API_KEY || !chatbotId) {
+                console.error("❌ CHATBASE_SECRET_KEY o BOT_ID mancante!");
+                return res.status(500).json({ error: "Configurazione Chatbase mancante" });
+            }
+        
+            // 1) Prepara la connessione SSE
+            res.setHeader("Content-Type", "text/event-stream");
+            res.setHeader("Cache-Control", "no-cache");
+            res.flushHeaders();
+        
+            try {
+                const response = await fetch("https://www.chatbase.co/api/v1/chat", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${CHATBASE_API_KEY}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        messages: req.body.messages,
+                        chatbotId: chatbotId,
+                        stream: true
+                    })
+                });
+        
+                if (!response.ok || !response.body) {
+                    throw new Error("Errore nella richiesta a Chatbase");
+                }
+        
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+        
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+        
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split("\n").filter(line => line.trim() !== "");
+        
+                    for (const line of lines) {
+                        if (line === "[DONE]") {
+                            res.write(`data: [DONE]\n\n`);
+                            return res.end();
+                        }
+        
+                        res.write(`data: ${line}\n\n`);
+                    }
+                }
+            } catch (error) {
+                console.error("❌ Errore durante lo streaming Chatbase:", error.message);
+                res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+                res.write(`data: [DONE]\n\n`);
+                res.end();
+            }
+        } else {
             return res.status(400).json({ error: "Servizio non valido" });
         }
 
