@@ -47,7 +47,7 @@ app.post("/api/:service", async (req, res) => {
               const cbResponse = await axios.post(
                 "https://www.chatbase.co/api/v1/chat",
                 { 
-                    instructions: req.body.systemRequest,
+                    instructions: req.body.instructions,
                     messages: req.body.messages, 
                     chatbotId: chatId, 
                     stream: true, 
