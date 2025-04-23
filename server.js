@@ -32,25 +32,30 @@ app.post("/api/:service", async (req, res) => {
 
         if (service === "chatbaseSimulateur") {
             const CHATBASE_API_KEY = process.env.CHATBASE_SECRET_KEY;
-            const chatId = process.env.CHATBASE_AGENT_ID;
+            const chatId            = process.env.CHATBASE_AGENT_ID;
             if (!CHATBASE_API_KEY || !chatId) {
               return res.status(500).json({ error: "Configurazione Chatbase mancante" });
             }
           
-            // 1) Imposta SSE
-            res.setHeader("Content-Type", "text/event-stream");
-            res.setHeader("Cache-Control", "no-cache");
-            res.flushHeaders();
+            // 1) imposti gli header SSE e anti-buffering
+            res.setHeader("Content-Type",       "text/event-stream");
+            res.setHeader("Cache-Control",      "no-cache, no-transform");
+            res.setHeader("Connection",         "keep-alive");
+            res.setHeader("X-Accel-Buffering",  "no");        // disabilita buffering nei proxy
+          
+            // forza l’invio immediato degli header
+            res.flushHeaders?.();
           
             try {
-              // 2) Usa axios con responseType: 'stream'
-              const cbResponse = await axios.post(
+              // 2) chiedi lo stream a Chatbase
+              const cbRes = await axios.post(
                 "https://www.chatbase.co/api/v1/chat",
-                { 
-                    messages: req.body.messages, 
-                    chatbotId: chatId, 
-                    stream: true, 
-                    temperature: 0 },
+                {
+                  messages:   req.body.messages,
+                  chatbotId:  chatId,
+                  stream:     true,
+                  temperature: 0
+                },
                 {
                   headers: {
                     Authorization: `Bearer ${CHATBASE_API_KEY}`,
@@ -60,39 +65,26 @@ app.post("/api/:service", async (req, res) => {
                 }
               );
           
-              // 3) Inoltra chunk per chunk
-              cbResponse.data.on("data", (chunk) => {
-                const text = chunk.toString("utf-8");
-                // 4) Splitta righe e gestisci DONE
-                text.split("\n").forEach(line => {
-                  if (!line.trim()) return;
-                  // rimuovi prefisso SSE se presente
-                  const payload = line.replace(/^data:\s*/, "");
-                  if (payload.includes("[DONE]")) {
-                    res.write("data: [DONE]\n\n");
-                    return res.end();
-                  }
-                  res.write(`data: ${payload}\n\n`);
-                  res.flush();
-                });
-              });
+              // 3) inoltra TUTTO lo stream così com’è al client
+              cbRes.data.pipe(res);
           
-              cbResponse.data.on("end", () => {
-                // fallback di chiusura
-                res.write("data: [DONE]\n\n");
+              // quando il flusso finisce, chiudi
+              cbRes.data.on("end", () => {
                 res.end();
               });
           
             } catch (err) {
-              console.error("❌ Errore durante lo streaming Chatbase:", err.response?.status, err.message);
+              console.error("❌ Errore streaming Chatbase:", err);
+              // segnala l’errore sul canale SSE
               res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
               res.write("data: [DONE]\n\n");
-              return res.end();
+              res.end();
             }
           
-            // 5) **RITORNA QUI** per non cadere nel fallback
+            // esci qui per non cadere nel fallback generico
             return;
-        }else if (service === "elevenlabs") {
+          }
+          else if (service === "elevenlabs") {
             apiKey = process.env.ELEVENLAB_API_KEY;
 
             if (!apiKey) {
