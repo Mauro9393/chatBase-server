@@ -32,59 +32,86 @@ app.post("/api/:service", async (req, res) => {
 
         if (service === "chatbaseSimulateur") {
             const CHATBASE_API_KEY = process.env.CHATBASE_SECRET_KEY;
-            const chatId            = process.env.CHATBASE_AGENT_ID;
+            const chatId = process.env.CHATBASE_AGENT_ID;
             if (!CHATBASE_API_KEY || !chatId) {
-              return res.status(500).json({ error: "Configurazione Chatbase mancante" });
+                return res.status(500).json({ error: "Configurazione Chatbase mancante" });
             }
-          
+
             // 1) imposti gli header SSE e anti-buffering
-            res.setHeader("Content-Type",       "text/event-stream");
-            res.setHeader("Cache-Control",      "no-cache, no-transform");
-            res.setHeader("Connection",         "keep-alive");
-            res.setHeader("X-Accel-Buffering",  "no");        // disabilita buffering nei proxy
-          
+            res.setHeader("Content-Type", "text/event-stream");
+            res.setHeader("Cache-Control", "no-cache, no-transform");
+            res.setHeader("Connection", "keep-alive");
+            res.setHeader("X-Accel-Buffering", "no");        // disabilita buffering nei proxy
+
             // forza l’invio immediato degli header
             res.flushHeaders?.();
-          
+
             try {
-              // 2) chiedi lo stream a Chatbase
-              const cbRes = await axios.post(
-                "https://www.chatbase.co/api/v1/chat",
-                {
-                  messages:   req.body.messages,
-                  chatbotId:  chatId,
-                  stream:     true,
-                  temperature: 0
-                },
-                {
-                  headers: {
-                    Authorization: `Bearer ${CHATBASE_API_KEY}`,
-                    "Content-Type": "application/json"
-                  },
-                  responseType: "stream"
-                }
-              );
-          
-              // 3) inoltra TUTTO lo stream così com’è al client
-              cbRes.data.pipe(res);
-          
-              // quando il flusso finisce, chiudi
-              cbRes.data.on("end", () => {
-                res.end();
-              });
-          
+                // 2) chiedi lo stream a Chatbase
+                const cbRes = await axios.post(
+                    "https://www.chatbase.co/api/v1/chat",
+                    {
+                        messages: req.body.messages,
+                        chatbotId: chatId,
+                        stream: true,
+                        temperature: 0
+                    },
+                    {
+                        headers: {
+                            Authorization: `Bearer ${CHATBASE_API_KEY}`,
+                            "Content-Type": "application/json"
+                        },
+                        responseType: "stream"
+                    }
+                );
+
+                // 3) inoltra TUTTO lo stream così com’è al client
+                cbRes.data.pipe(res);
+
+                // quando il flusso finisce, chiudi
+                cbRes.data.on("end", () => {
+                    res.end();
+                });
+
             } catch (err) {
-              console.error("❌ Errore streaming Chatbase:", err);
-              // segnala l’errore sul canale SSE
-              res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
-              res.write("data: [DONE]\n\n");
-              res.end();
+                console.error("❌ Errore streaming Chatbase:", err);
+                // segnala l’errore sul canale SSE
+                res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+                res.write("data: [DONE]\n\n");
+                res.end();
             }
-          
+
             // esci qui per non cadere nel fallback generico
             return;
-          }
-          else if (service === "elevenlabs") {
+        } else if (service === "openaiSimulateur") {
+            // 1) Prepara la connessione SSE
+            res.setHeader("Content-Type", "text/event-stream");
+            res.setHeader("Cache-Control", "no-cache");
+            res.flushHeaders(); // forza l’invio degli header
+
+            // 2) Avvia lo streaming dalla SDK OpenAI
+            const stream = await openai.chat.completions.create({
+                model: req.body.model,
+                messages: req.body.messages,
+                stream: true
+            });
+
+            // 3) Inoltra i delta.content come SSE
+            for await (const part of stream) {
+                const delta = part.choices?.[0]?.delta?.content;
+                if (delta) {
+                    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`);
+                }
+            }
+
+            // 4) Una volta finito, estrai il conteggio esatto dei token
+            const totalTokens = stream.usage?.total_tokens ?? 0;
+            res.write(`data: ${JSON.stringify({ usage: { total_tokens: totalTokens } })}\n\n`);
+
+            // 5) Chiudi il flusso con il DONE
+            res.write("data: [DONE]\n\n");
+            return res.end();
+        } else if (service === "elevenlabs") {
             apiKey = process.env.ELEVENLAB_API_KEY;
 
             if (!apiKey) {
@@ -157,7 +184,7 @@ app.post("/api/:service", async (req, res) => {
                 }
             }
         }
-           else {
+        else {
             return res.status(400).json({ error: "Servizio non valido" });
         }
 
