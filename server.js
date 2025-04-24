@@ -112,7 +112,8 @@ app.post("/api/:service", async (req, res) => {
                         messages: req.body.messages,
                         chatbotId: chatId,
                         stream: true,   // ← abilita streaming
-                        temperature: 0
+                        temperature: 0,
+                        conversationId: req.body.conversationId
                     },
                     {
                         headers: {
