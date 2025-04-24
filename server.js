@@ -25,6 +25,7 @@ const axiosInstance = axios.create({
 // Endpoint per chiamare diverse API
 app.post("/api/:service", async (req, res) => {
     try {
+        const readline = require("readline");
         const { service } = req.params;
         console.log("🔹 Servizio ricevuto:", service);
         console.log("🔹 Dati ricevuti:", JSON.stringify(req.body));
@@ -91,27 +92,27 @@ app.post("/api/:service", async (req, res) => {
             if (!CHATBASE_API_KEY || !chatId) {
                 return res.status(500).json({ error: "Configurazione Chatbase mancante" });
             }
-
-            // 1) imposti gli header SSE e anti-buffering
+        
+            // 1) Headers per lo stream SSE
             res.setHeader("Content-Type", "text/event-stream");
             res.setHeader("Cache-Control", "no-cache, no-transform");
             res.setHeader("Connection", "keep-alive");
-            res.setHeader("X-Accel-Buffering", "no");        // disabilita buffering nei proxy
+            res.setHeader("X-Accel-Buffering", "no");
             res.flushHeaders?.();
-
-            // 2) (opzionale) heartbeat per tenere viva la funzione Vercel
+        
+            // 2) Heartbeat per Vercel
             const heartbeat = setInterval(() => {
                 res.write(":\n\n");
             }, 4000);
-
+        
             try {
-                // 3) chiedi lo stream a Chatbase
+                // 3) Chiedi lo stream a Chatbase
                 const cbRes = await axios.post(
                     "https://www.chatbase.co/api/v1/chat",
                     {
                         messages: req.body.messages,
                         chatbotId: chatId,
-                        stream: true,   // ← abilita streaming
+                        stream: true,
                         temperature: 0
                     },
                     {
@@ -122,26 +123,52 @@ app.post("/api/:service", async (req, res) => {
                         responseType: "stream"
                     }
                 );
-
-                // 4) inoltra TUTTO lo stream così com’è al client
-                cbRes.data.pipe(res);
-                cbRes.data.on("end", () => {
+        
+                // 4) Intercetta riga per riga per leggere conversationId
+                const stream = cbRes.data;
+                const rl = readline.createInterface({
+                    input: stream,
+                    crlfDelay: Infinity
+                });
+        
+                let conversationIdLogged = false;
+        
+                rl.on("line", (line) => {
+                    if (line.startsWith("data:")) {
+                        const jsonStr = line.replace("data:", "").trim();
+                        try {
+                            const parsed = JSON.parse(jsonStr);
+                            const convoId = parsed.conversationId || parsed?.message?.conversationId;
+                            if (convoId && !conversationIdLogged) {
+                                console.log("✅ Conversation ID trovato:", convoId);
+                                conversationIdLogged = true;
+        
+                                // Manda al client un blocco speciale con solo la conversationId
+                                res.write(`data: ${JSON.stringify({ type: "meta", conversationId: convoId })}\n\n`);
+                            }
+                        } catch (e) {
+                            // Non fa nulla se non è JSON valido
+                        }
+                    }
+        
+                    // Inoltra comunque la riga al client
+                    res.write(line + "\n");
+                });
+        
+                rl.on("close", () => {
                     clearInterval(heartbeat);
-                    // Chiude lo SSE con [DONE]
                     res.write("data: [DONE]\n\n");
                     res.end();
                 });
-
+        
             } catch (err) {
                 clearInterval(heartbeat);
                 console.error("❌ Errore streaming Chatbase:", err);
-                // segnala l’errore sul canale SSE
                 res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
                 res.write("data: [DONE]\n\n");
                 res.end();
             }
-
-            // esci qui per non cadere nel fallback generico
+        
             return;
         }
         else if (service === "openaiSimulateur") {
