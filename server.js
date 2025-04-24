@@ -29,8 +29,8 @@ app.post("/api/:service", async (req, res) => {
         console.log("🔹 Servizio ricevuto:", service);
         console.log("🔹 Dati ricevuti:", JSON.stringify(req.body));
         let apiKey, apiUrl;
-
-        if (service === "chatbaseSimulateur") {
+        //STREAMING
+        /*if (service === "chatbaseSimulateur") {
             const CHATBASE_API_KEY = process.env.CHATBASE_SECRET_KEY;
             const chatId = process.env.CHATBASE_AGENT_ID;
             if (!CHATBASE_API_KEY || !chatId) {
@@ -83,7 +83,42 @@ app.post("/api/:service", async (req, res) => {
 
             // esci qui per non cadere nel fallback generico
             return;
-        } else if (service === "openaiSimulateur") {
+        }*/
+//NO STREAMING
+        if (service === "chatbaseSimulateur") {
+            const CHATBASE_API_KEY = process.env.CHATBASE_SECRET_KEY;
+            const chatId = process.env.CHATBASE_AGENT_ID;
+            if (!CHATBASE_API_KEY || !chatId) {
+                return res.status(500).json({ error: "Configurazione Chatbase mancante" });
+            }
+
+            try {
+                // 1) chiedi la risposta completa (non in streaming)
+                const cbRes = await axios.post(
+                    "https://www.chatbase.co/api/v1/chat",
+                    {
+                        messages: req.body.messages,
+                        chatbotId: chatId,
+                        stream: false,       // ← disabilita lo streaming
+                        temperature: 0
+                    },
+                    {
+                        headers: {
+                            Authorization: `Bearer ${CHATBASE_API_KEY}`,
+                            "Content-Type": "application/json"
+                        }
+                    }
+                );
+
+                // 2) ritorna tutto il JSON al client
+                return res.json(cbRes.data);
+
+            } catch (err) {
+                console.error("❌ Errore Chatbase:", err);
+                return res.status(500).json({ error: err.message });
+            }
+        }
+        else if (service === "openaiSimulateur") {
             // 1) Prepara la connessione SSE
             res.setHeader("Content-Type", "text/event-stream");
             res.setHeader("Cache-Control", "no-cache");
