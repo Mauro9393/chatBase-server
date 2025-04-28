@@ -29,62 +29,6 @@ app.post("/api/:service", async (req, res) => {
         console.log("🔹 Servizio ricevuto:", service);
         console.log("🔹 Dati ricevuti:", JSON.stringify(req.body));
         let apiKey, apiUrl;
-        //STREAMING
-        /*if (service === "chatbaseSimulateur") {
-            const CHATBASE_API_KEY = process.env.CHATBASE_SECRET_KEY;
-            const chatId = process.env.CHATBASE_AGENT_ID;
-            if (!CHATBASE_API_KEY || !chatId) {
-                return res.status(500).json({ error: "Configurazione Chatbase mancante" });
-            }
-
-            // 1) imposti gli header SSE e anti-buffering
-            res.setHeader("Content-Type", "text/event-stream");
-            res.setHeader("Cache-Control", "no-cache, no-transform");
-            res.setHeader("Connection", "keep-alive");
-            res.setHeader("X-Accel-Buffering", "no");        // disabilita buffering nei proxy
-
-            // forza l’invio immediato degli header
-            res.flushHeaders?.();
-
-            try {
-                // 2) chiedi lo stream a Chatbase
-                const cbRes = await axios.post(
-                    "https://www.chatbase.co/api/v1/chat",
-                    {
-                        messages: req.body.messages,
-                        chatbotId: chatId,
-                        stream: true,
-                        temperature: 0
-                    },
-                    {
-                        headers: {
-                            Authorization: `Bearer ${CHATBASE_API_KEY}`,
-                            "Content-Type": "application/json"
-                        },
-                        responseType: "stream"
-                    }
-                );
-
-                // 3) inoltra TUTTO lo stream così com’è al client
-                cbRes.data.pipe(res);
-
-                // quando il flusso finisce, chiudi
-                cbRes.data.on("end", () => {
-                    res.end();
-                });
-
-            } catch (err) {
-                console.error("❌ Errore streaming Chatbase:", err);
-                // segnala l’errore sul canale SSE
-                res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
-                res.write("data: [DONE]\n\n");
-                res.end();
-            }
-
-            // esci qui per non cadere nel fallback generico
-            return;
-        }*/
-        //NO STREAMING
         if (service === "chatbaseSimulateur") {
             const CHATBASE_API_KEY = process.env.CHATBASE_SECRET_KEY;
             const chatId = process.env.CHATBASE_AGENT_ID;
@@ -92,26 +36,26 @@ app.post("/api/:service", async (req, res) => {
                 return res.status(500).json({ error: "Configurazione Chatbase mancante" });
             }
 
-            // 1) imposti gli header SSE e anti-buffering
+            // Let’s set the SSE and anti-buffering headers.
             res.setHeader("Content-Type", "text/event-stream");
             res.setHeader("Cache-Control", "no-cache, no-transform");
             res.setHeader("Connection", "keep-alive");
-            res.setHeader("X-Accel-Buffering", "no");        // disabilita buffering nei proxy
+            res.setHeader("X-Accel-Buffering", "no");        // disable buffering in the proxy
             res.flushHeaders?.();
 
-            // 2) (opzionale) heartbeat per tenere viva la funzione Vercel
+            // heartbeat to keep the Vercel function alive
             const heartbeat = setInterval(() => {
                 res.write(":\n\n");
             }, 4000);
 
             try {
-                // 3) chiedi lo stream a Chatbase
+                // Ask Chatbase for the stream.
                 const cbRes = await axios.post(
                     "https://www.chatbase.co/api/v1/chat",
                     {
                         messages: req.body.messages,
                         chatbotId: chatId,
-                        stream: true,   // ← abilita streaming
+                        stream: true,  
                         temperature: 0,
                         conversationId: req.body.conversationId
                     },
@@ -124,11 +68,11 @@ app.post("/api/:service", async (req, res) => {
                     }
                 );
 
-                // 4) inoltra TUTTO lo stream così com’è al client
+                // Forward the ENTIRE stream as-is to the client.
                 cbRes.data.pipe(res);
                 cbRes.data.on("end", () => {
                     clearInterval(heartbeat);
-                    // Chiude lo SSE con [DONE]
+                    // End SSE with [DONE]
                     res.write("data: [DONE]\n\n");
                     res.end();
                 });
@@ -136,13 +80,13 @@ app.post("/api/:service", async (req, res) => {
             } catch (err) {
                 clearInterval(heartbeat);
                 console.error("❌ Errore streaming Chatbase:", err);
-                // segnala l’errore sul canale SSE
+                // Report the error on the SSE channel.
                 res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
                 res.write("data: [DONE]\n\n");
                 res.end();
             }
 
-            // esci qui per non cadere nel fallback generico
+            // Exit to avoid falling into the generic fallback.
             return;
         }
         else if (service === "openaiSimulateur") {
